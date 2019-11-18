@@ -1,0 +1,4 @@
+[submodule "gcode-rs"]
+	path = gcode-rs
+	url = git@github.com:ithinuel/gcode-rs.git
+	branch = lexer_modes
