@@ -1,52 +1,85 @@
 #![no_std]
 #![no_main]
 
-// pick a panicking behavior
-extern crate panic_halt; // you can put a breakpoint on `rust_begin_unwind` to catch panics
-// extern crate panic_abort; // requires nightly
-// extern crate panic_itm; // logs messages over ITM; requires ITM support
-// extern crate panic_semihosting; // logs messages to the host stderr; requires a debugger
-extern crate stm32f4xx_hal;
-#[macro_use]
 extern crate nb;
+extern crate panic_halt;
 
 use cortex_m_rt::entry;
+use embedded_hal::serial::Read;
 use stm32f4xx_hal::{
     prelude::*,
+    serial::{self, Serial},
     stm32,
-    timer::Timer,
 };
+
+#[derive(Debug)]
+enum Error<E> {
+    Io(E),
+    Parser(gcode::Error),
+}
+impl<E> From<gcode::Error> for Error<E> {
+    fn from(f: gcode::Error) -> Error<E> {
+        Error::Parser(f)
+    }
+}
+
+struct SerialIterator<B: Read<u8>>(B);
+impl<B: Read<u8>> Iterator for SerialIterator<B> {
+    type Item = Result<char, Error<B::Error>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.0.read() {
+            Ok(byte) => Some(Ok(byte.into())),
+            Err(nb::Error::WouldBlock) => None,
+            Err(nb::Error::Other(o)) => Some(Err(Error::Io(o))),
+        }
+    }
+}
 
 #[entry]
 fn main() -> ! {
-    // Get access to the core peripherals from the cortex-m crate
-    let cp = cortex_m::Peripherals::take().unwrap();
     // Get access to the device specific peripherals from the peripheral access crate
-    let dp = stm32::Peripherals::take().unwrap();
- 
+    let p = stm32::Peripherals::take().unwrap_or_else(|| unreachable!());
+
     // Take ownership over the raw flash and rcc devices and convert them
     // into the corresponding HAL structs
-    let rcc = dp.RCC.constrain();
- 
+    let rcc = p.RCC.constrain();
+
     // Freeze the configuration of all the clocks in the system and store
     // the frozen frequencies in `clocks`
-    let clocks = rcc.cfgr.freeze();
- 
+    let clocks = rcc.cfgr.sysclk(84.mhz()).freeze();
+
     // Acquire the GPIOC peripheral
-    let gpioa = dp.GPIOA.split();
- 
-    // Configure gpio C pin 13 as a push-pull output. The `crh` register is
-    // passed to the function in order to configure the port. For pins 0-7,
-    // crl should be passed instead.
-    let mut led = gpioa.pa5.into_push_pull_output();
-    // Configure the syst timer to trigger an update every second
-    let mut timer = Timer::syst(cp.SYST, 1.hz(), clocks);
- 
-    // Wait for the timer to trigger an update and change the state of the LED
+    let gpioa = p.GPIOA.split();
+
+    let tx = gpioa.pa2.into_alternate_af7();
+    let rx = gpioa.pa3.into_alternate_af7();
+
+    let (mut tx, rx) = Serial::usart2(
+        p.USART2,
+        (tx, rx),
+        serial::config::Config::default().baudrate(115_200.bps()),
+        clocks,
+    )
+    .map(|serial| serial.split())
+    .unwrap_or_else(|_| unreachable!());
+
+    let it = SerialIterator(rx);
+    // writeln!(tx, "size_of<SerialIterator>: {}", core::mem::size_of_val(&it)).unwrap();
+
+    let mut rx = gcode::Parser::new(it);
+    // use core::fmt::Write;
+    // writeln!(tx, "size_of<Parser<SerialIterator>>: {}", core::mem::size_of_val(&rx)).unwrap();
+
     loop {
-        block!(timer.wait()).unwrap();
-        led.set_high();
-        block!(timer.wait()).unwrap();
-        led.set_low();
-    } 
+        match rx.next() {
+            Some(Ok(b)) => {
+                // writeln!(tx, "{:?}", b).unwrap();
+            }
+            Some(Err(e)) => {
+                // writeln!(tx, "err: {:?}", e).unwrap();
+            }
+            _ => {}
+        }
+    }
 }
