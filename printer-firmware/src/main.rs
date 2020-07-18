@@ -8,10 +8,8 @@ mod gcode;
 mod platform;
 
 use arrayvec::ArrayVec;
-use core::fmt::Write;
 use cortex_m_rt::entry;
 use embedded_hal::serial::Read;
-//use gcode_queue::GCodeQueue;
 
 enum Positioning {
     Relative,
@@ -63,36 +61,45 @@ enum Plane {
 #[derive(Debug)]
 enum Error<IoError, ParsingError> {
     Io(IoError),
-    BufferOverrun,
     Parsing(ParsingError),
     InvalidLineNumber(u32),
     TooManyWords,
 }
 
-fn read<T, U>(
+fn read<T, U, V>(
     from_serial: &mut dyn Read<u8, Error = U>,
     buffer: &mut ArrayVec<T>,
-    ignore_line: &mut bool,
+    state: &mut egcode::Parser,
+    words: &mut ArrayVec<V>,
+    error_mode: &mut bool,
 ) -> nb::Result<(), Error<U, egcode::Error>>
 where
     T: arrayvec::Array<Item = u8>,
+    V: arrayvec::Array<Item = egcode::GCode>,
 {
     match from_serial.read() {
         Ok(byte) => {
-            if !buffer.is_full() {
-                buffer.push(byte);
-            }
             let is_eol = byte == b'\n' || byte == b'\r';
-            if *ignore_line && is_eol {
-                *ignore_line = false;
-                buffer.clear();
-            } else if buffer.is_full() || is_eol {
-                return Ok(());
+            if *error_mode {
+                if is_eol {
+                    *error_mode = false;
+                    buffer.clear();
+                    state.reset();
+                    words.clear();
+                }
+            } else {
+                let _ = buffer.try_push(byte);
+                if buffer.is_full() || is_eol {
+                    return Ok(());
+                }
             }
             Err(nb::Error::WouldBlock)
         }
         Err(nb::Error::WouldBlock) => Err(nb::Error::WouldBlock),
-        Err(nb::Error::Other(err)) => Err(nb::Error::from(Error::Io(err))),
+        Err(nb::Error::Other(err)) => {
+            *error_mode = true;
+            Err(nb::Error::from(Error::Io(err)))
+        }
     }
 }
 
@@ -108,31 +115,23 @@ where
     use egcode::GCode;
 
     // parse & cache segments
+    let mut had_execute = false;
     let mut parser = state.parse(buffer);
     for res in &mut parser {
         match res {
             Ok(word) => {
-                words.push(word);
-                if words.len() == words.capacity() {
-                    break;
-                }
+                had_execute |= word == GCode::Execute;
+                let _ = words.try_push(word);
             }
             Err(err) => return Err(nb::Error::from(Error::Parsing(err))),
         }
     }
 
-    if !words
-        .last()
-        .map(|word| word == &GCode::Execute)
-        .unwrap_or(false)
-    {
-        if words.len() == words.capacity() {
+    if had_execute {
+        if words.is_full() && words.last().map(|w| w != &GCode::Execute).unwrap_or(true) {
+            words.clear();
             Err(nb::Error::from(Error::TooManyWords))
-        } else {
-            Err(nb::Error::WouldBlock)
-        }
-    } else {
-        if words
+        } else if words
             .first()
             .map(|w| match w {
                 GCode::LineNumber(number) => *number != next_line_number,
@@ -145,6 +144,8 @@ where
         } else {
             Ok(())
         }
+    } else {
+        Err(nb::Error::WouldBlock)
     }
 }
 
@@ -190,6 +191,8 @@ where
 
 #[entry]
 fn main() -> ! {
+    use core::fmt::Write;
+
     let platform = platform::Platform::new();
     let mut state = egcode::Parser::new();
 
@@ -200,24 +203,48 @@ fn main() -> ! {
     let mut words: ArrayVec<[_; 10]> = Default::default();
 
     let mut next_line_number = 0;
-    let mut ignore_line = false;
+    let mut error_mode = false;
+
+    //writeln!(tx, "start").unwrap_or(());
 
     loop {
         // fetch input as fast as possible
-        read(&mut from_serial, &mut buffer, &mut ignore_line)
-            .and_then(|_| parse(buffer.drain(..), &mut state, &mut words, next_line_number))
-            .and_then(|_| {
-                writeln!(tx, "{:?} {:?} {:?}", buffer, state, words).unwrap();
-                process(&mut words, &mut next_line_number)
-            })
-            .map_err(|err| match err {
-                nb::Error::Other(err) => {
-                    writeln!(tx, "{:?}", err).unwrap();
-                    ignore_line = true;
-                    words.clear();
-                    state.reset();
+        let _ = read(
+            &mut from_serial,
+            &mut buffer,
+            &mut state,
+            &mut words,
+            &mut error_mode,
+        )
+        .and_then(|_| {
+            struct Consumer<'a, T>(&'a mut ArrayVec<T>)
+            where
+                T: arrayvec::Array<Item = u8>;
+            impl<T> Iterator for Consumer<'_, T>
+            where
+                T: arrayvec::Array<Item = u8>,
+            {
+                type Item = u8;
+                fn next(&mut self) -> Option<u8> {
+                    self.0.pop()
                 }
-                _ => {}
-            });
+            }
+            parse(
+                Consumer(&mut buffer),
+                &mut state,
+                &mut words,
+                next_line_number,
+            )
+        })
+        .and_then(|_| {
+            //writeln!(tx, "{:?} {:?} {:?}", buffer, state, words).unwrap_or(());
+            process(&mut words, &mut next_line_number)
+        })
+        .map_err(|err| match err {
+            nb::Error::Other(err) => {
+                //writeln!(tx, "!! {:?}", err).unwrap_or(());
+            }
+            _ => {}
+        });
     }
 }

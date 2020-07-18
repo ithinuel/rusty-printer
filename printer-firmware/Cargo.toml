@@ -24,7 +24,6 @@ panic-halt = "^0"
 # panic-semihosting = "0.5.2"
 
 [dependencies.gcode]
-path = "../gcode-rs"
 version = "^0"
 default-features = false
 features = ["parse-trailing-comment", "parse-checksum", "optional-value"]
@@ -34,9 +33,3 @@ features = ["parse-trailing-comment", "parse-checksum", "optional-value"]
 name = "demo"
 test = false
 bench = false
-
-[profile.release]
-codegen-units = 1 # better optimizations
-debug = true # symbols are nice and they don't increase the size on Flash
-lto = true # better optimizations
-# panic = "abort"

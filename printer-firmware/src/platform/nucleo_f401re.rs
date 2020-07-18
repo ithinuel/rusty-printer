@@ -28,7 +28,7 @@ impl Platform {
         let tx = gpioa.pa2.into_alternate_af7();
         let rx = gpioa.pa3.into_alternate_af7();
 
-        let (mut tx, rx) = Serial::usart2(
+        let (tx, rx) = Serial::usart2(
             p.USART2,
             (tx, rx),
             serial::config::Config::default().baudrate(115_200.bps()),
@@ -36,9 +36,6 @@ impl Platform {
         )
         .map(|serial| serial.split())
         .unwrap_or_else(|_| unreachable!());
-
-        use core::fmt::Write;
-        writeln!(tx, "hclk: {:?}", clocks.hclk().0).unwrap();
 
         Self { sin: rx, sout: tx }
     }
