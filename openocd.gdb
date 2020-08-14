@@ -29,7 +29,21 @@ monitor arm semihosting enable
 # # enable ITM port 0
 # monitor itm port 0 on
 
-load
+define reload
+    # reload symbols
+    python gdb.execute("file " + gdb.current_progspace().filename)
+    # clear cache
+    directory
 
-# start the process but immediately halt the processor
-stepi
+    # flash
+    load
+    # start
+    monitor reset halt
+    stepi
+end
+
+define reset
+    monitor reset halt
+end
+
+reload

@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
-#![feature(alloc_error_handler)]
 
 extern crate gcode as egcode;
 extern crate panic_halt;
+//extern crate panic_semihosting;
 
 mod executor;
 mod gcode;
@@ -12,7 +12,7 @@ mod platform;
 use arrayvec::ArrayVec;
 use cortex_m_rt::entry;
 use embedded_hal::serial::Read;
-use futures::{future, stream, Stream, StreamExt};
+use futures::{future, stream, StreamExt, TryStreamExt};
 
 enum Positioning {
     Relative,
@@ -62,11 +62,16 @@ enum Plane {
 //}
 
 #[derive(Debug)]
-enum Error<IoError, ParsingError> {
+enum Error<IoError> {
     Io(IoError),
-    Parsing(ParsingError),
+    Parsing(egcode::Error),
     InvalidLineNumber(u32),
     TooManyWords,
+}
+impl<IoError> From<egcode::Error> for Error<IoError> {
+    fn from(e: egcode::Error) -> Self {
+        Self::Parsing(e)
+    }
 }
 
 struct SerialIterator<B> {
@@ -85,13 +90,28 @@ impl<B: Read<u8>> SerialIterator<B> {
         }
     }
 }
+impl<B> core::fmt::Debug for SerialIterator<B> {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        f.debug_struct("SerialIterator")
+            .field("buffer", &self.buffer)
+            .field("wr", &self.wr)
+            .field("rd", &self.rd)
+            .finish()
+    }
+}
 
 impl<B: Read<u8>> Iterator for SerialIterator<B> {
     type Item = Result<u8, B::Error>;
     fn next(&mut self) -> Option<Self::Item> {
         while self.wr != self.rd {
             match self.reader.read() {
-                Ok(byte) => self.buffer[self.wr] = byte,
+                Ok(byte) => {
+                    self.buffer[self.wr] = byte;
+                    self.wr += 1;
+                    if self.wr == 128 {
+                        self.wr = 0
+                    }
+                }
                 Err(nb::Error::WouldBlock) => break,
                 Err(nb::Error::Other(e)) => return Some(Err(e)),
             }
@@ -110,199 +130,95 @@ impl<B: Read<u8>> Iterator for SerialIterator<B> {
     }
 }
 
-/*fn read<T, U, V>(
-    from_serial: &mut dyn Read<u8, Error = U>,
-    buffer: &mut ArrayVec<T>,
-    state: &mut egcode::Parser,
-    words: &mut ArrayVec<V>,
-    error_mode: &mut bool,
-) -> nb::Result<(), Error<U, egcode::Error>>
-where
-    T: arrayvec::Array<Item = u8>,
-    V: arrayvec::Array<Item = egcode::GCode>,
-{
-    match from_serial.read() {
-        Ok(byte) => {
-            let is_eol = byte == b'\n' || byte == b'\r';
-            if *error_mode {
-                if is_eol {
-                    *error_mode = false;
-                    buffer.clear();
-                    state.reset();
-                    words.clear();
-                }
-            } else {
-                let _ = buffer.try_push(byte);
-                if buffer.is_full() || is_eol {
-                    return Ok(());
-                }
-            }
-            Err(nb::Error::WouldBlock)
-        }
-        Err(nb::Error::WouldBlock) => Err(nb::Error::WouldBlock),
-        Err(nb::Error::Other(err)) => {
-            *error_mode = true;
-            Err(nb::Error::from(Error::Io(err)))
-        }
-    }
-}*/
-
-/*fn parse<T, U, V: Iterator<Item = u8>>(
-    buffer: V,
-    state: &mut egcode::Parser,
-    words: &mut ArrayVec<T>,
-    next_line_number: u32,
-) -> nb::Result<(), Error<U, egcode::Error>>
-where
-    T: arrayvec::Array<Item = egcode::GCode>,
-{
-    use egcode::GCode;
-
-    // parse & cache segments
-    let mut had_execute = false;
-    let mut parser = state.parse(buffer);
-    for res in &mut parser {
-        match res {
-            Ok(word) => {
-                had_execute |= word == GCode::Execute;
-                let _ = words.try_push(word);
-            }
-            Err(err) => return Err(nb::Error::from(Error::Parsing(err))),
-        }
-    }
-
-    if had_execute {
-        if words.is_full() && words.last().map(|w| w != &GCode::Execute).unwrap_or(true) {
-            words.clear();
-            Err(nb::Error::from(Error::TooManyWords))
-        } else if words
-            .first()
-            .map(|w| match w {
-                GCode::LineNumber(number) => *number != next_line_number,
-                _ => false,
-            })
-            .unwrap_or(false)
-        {
-            words.clear();
-            Err(nb::Error::from(Error::InvalidLineNumber(next_line_number)))
-        } else {
-            Ok(())
-        }
-    } else {
-        Err(nb::Error::WouldBlock)
-    }
-}*/
-
-/*fn process<T, U>(
-    words: &mut ArrayVec<T>,
-    next_line_number: &mut u32,
-) -> nb::Result<(), Error<U, egcode::Error>>
-where
-    T: arrayvec::Array<Item = egcode::GCode>,
-{
-    use egcode::GCode;
-
-    // The line is known to be valid so increment the next line number.
-    *next_line_number += 1;
-    if *next_line_number == 100_000 {
-        *next_line_number = 0;
-    }
-    // process words, enqueue commands or execute them is not queueable
-    for word in &*words {
-        match word {
-            GCode::Word(letter, value) => {
-                // State change => XYZ motionmode movetype unit workspace plane
-                //
-            }
-            _ => {}
-        }
-    }
-
-    // process parameters
-    for word in words {
-        match word {
-            GCode::ParameterSet(_id, _value) => {}
-            _ => {}
-        }
-    }
-
-    // clear word buffer.
-    words.clear();
-    Ok(())
-}*/
-
-#[alloc_error_handler]
-fn oom(_: core::alloc::Layout) -> ! {
-    loop {}
-}
-
-extern crate alloc;
-
-use alloc_cortex_m::CortexMHeap;
-#[global_allocator]
-static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
-
 #[entry]
 fn main() -> ! {
     use core::fmt::Write;
 
-    // Initialize the allocator BEFORE you use it
-    let start = cortex_m_rt::heap_start() as usize;
-    let size = 2048; // in bytes
-    unsafe { ALLOCATOR.init(start, size) }
+    let platform::Platform {
+        sin: rx,
+        sout: mut tx,
+        name: platform_name,
+    } = platform::Platform::take();
 
-    let platform = platform::Platform::new();
-
-    let mut rx = platform.sin;
-    let mut tx = platform.sout;
-
-    let mut words: ArrayVec<[egcode::GCode; 10]> = Default::default();
-
-    let mut next_line_number = 0;
-    let mut error_mode = false;
-
-    //writeln!(tx, "start").unwrap_or(());
-    let mut it = SerialIterator::new(rx);
-    executor::block_on(async {
-        let mut strm = stream::poll_fn(|_| match it.next() {
+    executor::block_on(async move {
+        let mut it = SerialIterator::new(rx);
+        let strm = stream::poll_fn(|_| match it.next() {
             Some(b) => core::task::Poll::Ready(Some(b)),
             None => core::task::Poll::Pending,
         })
-        .filter_map(|res| {
-            future::ready(match res {
-                Ok(byte) => Some(byte),
-                Err(e) => {
-                    //writeln!(tx, "{:?}", e).unwrap_or(());
-                    None
-                }
-            })
-        });
-        let parser = egcode::Parser::new(strm);
-        let mut strm = stream::unfold(parser, |p| {
-            let a = alloc::boxed::Box::pin(p.next());
+        .map(|res| res.map_err(Error::Io));
+        let mut parser = egcode::Parser::new(strm);
 
-            writeln!(tx, "{:?}", core::mem::size_of_val(&*a)).unwrap_or(());
-            a
-        });
+        writeln!(
+            tx,
+            "Rusty ({}) VER:{} MODEL:{} HW:{}",
+            env!("CARGO_PKG_HOMEPAGE"),
+            env!("CARGO_PKG_VERSION"),
+            "from_config",
+            platform_name
+        )
+        .unwrap_or(());
+        // cap:<capability name in caps>:<0 or 1>
+        //     AUTOREPORT_TEMP
+        //     AUTOREPORT_SD_STATUS
+        //     BUSY_PROTOCOL
+        //     EMERGENCY_PARSER
+        //     CHAMBER_TEMPERATURE
+        //     Marlin/src/gcode/host/M115.cpp
 
+        let mut next_line_number = 0;
+        let mut error_recovery = false;
         loop {
-            let mut err = None;
-
             // take_until error or execute is reached or 10 elements have been picked
-            let words: ArrayVec<[_; 10]> = strm
-                .by_ref()
-                .filter_map(|res| match res {
-                    Ok(word) => future::ready(Some(word)),
-                    Err(e) => {
-                        err = Some(e);
-                        future::ready(None)
-                    }
+            let fut = stream::unfold(
+                &mut parser,
+                |p| async move { p.next().await.map(|w| (w, p)) },
+            )
+            .take_while(|res| {
+                future::ready(match res {
+                    Ok(egcode::GCode::Execute) => false,
+                    _ => true,
                 })
-                .take_while(|word| future::ready(word != &egcode::GCode::Execute))
-                .take(10)
-                .collect()
-                .await;
-            //writeln!(tx, "{:?} {:?}", err, words).unwrap_or(());
+            })
+            .take(10)
+            .try_collect();
+
+            //writeln!(tx, "wait: fut size: {}", core::mem::size_of_val(&fut)).unwrap_or(());
+            let res_segments: Result<ArrayVec<[_; 10]>, Error<_>> = fut.await;
+
+            //writeln!(tx, "wait: {} {:?}", had_error, res_segments).unwrap_or(());
+            match res_segments {
+                Ok(segments) if !error_recovery => {
+                    if segments.len() == segments.capacity() {
+                        // too many words
+                        // discard the line
+                        writeln!(
+                            tx,
+                            "error: Too many segment on the line (limit: {})",
+                            segments.capacity()
+                        )
+                        .unwrap_or(());
+                        error_recovery = true;
+                    } else if !segments.is_empty() {
+                        writeln!(tx, "ok {:?}", segments).unwrap_or(());
+                        next_line_number += 1;
+                    }
+                }
+                Ok(segments) => {
+                    if segments.len() < 10 {
+                        error_recovery = false;
+                    }
+                }
+                Err(e) => {
+                    writeln!(tx, "wait: Err({:?})", e).unwrap_or(());
+                    writeln!(tx, "rs: N:{}", next_line_number).unwrap_or(());
+                    error_recovery = true;
+                }
+            }
+
+            // if err.is_some() ignore the words
+            // if first == LineNumber => check line number
+            // process words
         }
     });
     unreachable!()

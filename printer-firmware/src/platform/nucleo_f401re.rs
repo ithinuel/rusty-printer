@@ -7,10 +7,11 @@ use stm32f4xx_hal::{
 pub(crate) struct Platform {
     pub sout: Tx<USART2>,
     pub sin: Rx<USART2>,
+    pub name: &'static str,
 }
 
 impl Platform {
-    pub fn new() -> Self {
+    pub fn take() -> Self {
         // Get access to the device specific peripherals from the peripheral access crate
         let p = Peripherals::take().unwrap_or_else(|| unreachable!());
 
@@ -37,6 +38,10 @@ impl Platform {
         .map(|serial| serial.split())
         .unwrap_or_else(|_| unreachable!());
 
-        Self { sin: rx, sout: tx }
+        Self {
+            sin: rx,
+            sout: tx,
+            name: "nucleo_f401re",
+        }
     }
 }

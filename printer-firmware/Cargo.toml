@@ -2,7 +2,7 @@
 authors = ["ithinuel"]
 edition = "2018"
 readme = "README.md"
-name = "demo"
+name = "printer-firmware"
 version = "0.1.0"
 
 [features]
@@ -18,14 +18,12 @@ arrayvec = { version = "0.5.1", default-features = false }
 stm32f4xx-hal = { version = "^0", features = ["stm32f401", "rt"] }
 embedded-hal = { version = "^0", features = ["unproven"] }
 futures = { version = "0.3.5", default-features = false }
-pin-utils = {_version = "*"}
-
-alloc-cortex-m = {version = "*"}
+pin-utils = { version = "*" }
 
 # Uncomment for the panic example.
 # panic-itm = "0.4.1"
 panic-halt = "^0"
-# panic-semihosting = "0.5.2"
+ #panic-semihosting = "0.5.2"
 
 [dependencies.gcode]
 version = "^0"
@@ -34,6 +32,6 @@ features = ["parse-trailing-comment", "parse-checksum", "optional-value"]
 
 # this lets you use `cargo fix`!
 [[bin]]
-name = "demo"
+name = "printer-firmware"
 test = false
 bench = false
