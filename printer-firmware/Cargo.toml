@@ -18,12 +18,13 @@ arrayvec = { version = "0.5.1", default-features = false }
 stm32f4xx-hal = { version = "^0", features = ["stm32f401", "rt"] }
 embedded-hal = { version = "^0", features = ["unproven"] }
 futures = { version = "0.3.5", default-features = false }
-pin-utils = { version = "*" }
+pin-utils = "*"
 
 # Uncomment for the panic example.
-# panic-itm = "0.4.1"
+#panic-itm = "0.4.1"
 panic-halt = "^0"
- #panic-semihosting = "0.5.2"
+#panic-semihosting = "0.5.2"
+#alloc_cortex_m = "*"
 
 [dependencies.gcode]
 version = "^0"

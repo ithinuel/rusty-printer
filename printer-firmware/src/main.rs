@@ -1,9 +1,11 @@
 #![no_std]
 #![no_main]
+//#![feature(alloc_error_handler)]
 
 extern crate gcode as egcode;
 extern crate panic_halt;
 //extern crate panic_semihosting;
+//use alloc_cortex_m::CortexMHeap;
 
 mod executor;
 mod gcode;
@@ -130,6 +132,14 @@ impl<B: Read<u8>> Iterator for SerialIterator<B> {
     }
 }
 
+/*#[global_allocator]
+static ALLOCATOR: CortexMHeap = CortexMHeap::empty();
+
+#[alloc_error_handler]
+fn oom(_: core::alloc::Layout) -> ! {
+    loop {}
+}*/
+
 #[entry]
 fn main() -> ! {
     use core::fmt::Write;
@@ -140,13 +150,20 @@ fn main() -> ! {
         name: platform_name,
     } = platform::Platform::take();
 
+    // Initialize the allocator BEFORE you use it
+    /*let start = cortex_m_rt::heap_start() as usize;
+    let size = 1024; // in bytes
+    unsafe { ALLOCATOR.init(start, size) }
+    */
+
+    let mut it = SerialIterator::new(rx);
+    let strm = stream::poll_fn(|_| match it.next() {
+        Some(b) => core::task::Poll::Ready(Some(b)),
+        None => core::task::Poll::Pending,
+    })
+    .map(|res| res.map_err(Error::Io));
+
     executor::block_on(async move {
-        let mut it = SerialIterator::new(rx);
-        let strm = stream::poll_fn(|_| match it.next() {
-            Some(b) => core::task::Poll::Ready(Some(b)),
-            None => core::task::Poll::Pending,
-        })
-        .map(|res| res.map_err(Error::Io));
         let mut parser = egcode::Parser::new(strm);
 
         writeln!(
