@@ -26,7 +26,7 @@ panic-halt = "^0"
 #panic-semihosting = "0.5.2"
 #alloc_cortex_m = "*"
 
-[dependencies.gcode]
+[dependencies.async-gcode]
 version = "^0"
 default-features = false
 features = ["parse-trailing-comment", "parse-checksum", "optional-value"]

@@ -2,7 +2,7 @@
 #![no_main]
 //#![feature(alloc_error_handler)]
 
-extern crate gcode as egcode;
+extern crate async_gcode;
 extern crate panic_halt;
 //extern crate panic_semihosting;
 //use alloc_cortex_m::CortexMHeap;
@@ -66,12 +66,12 @@ enum Plane {
 #[derive(Debug)]
 enum Error<IoError> {
     Io(IoError),
-    Parsing(egcode::Error),
+    Parsing(async_gcode::Error),
     InvalidLineNumber(u32),
     TooManyWords,
 }
-impl<IoError> From<egcode::Error> for Error<IoError> {
-    fn from(e: egcode::Error) -> Self {
+impl<IoError> From<async_gcode::Error> for Error<IoError> {
+    fn from(e: async_gcode::Error) -> Self {
         Self::Parsing(e)
     }
 }
@@ -164,7 +164,7 @@ fn main() -> ! {
     .map(|res| res.map_err(Error::Io));
 
     executor::block_on(async move {
-        let mut parser = egcode::Parser::new(strm);
+        let mut parser = async_gcode::Parser::new(strm);
 
         writeln!(
             tx,
@@ -193,7 +193,7 @@ fn main() -> ! {
             )
             .take_while(|res| {
                 future::ready(match res {
-                    Ok(egcode::GCode::Execute) => false,
+                    Ok(async_gcode::GCode::Execute) => false,
                     _ => true,
                 })
             })
