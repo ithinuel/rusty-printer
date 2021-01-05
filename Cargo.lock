@@ -21,7 +21,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "293dac66b274fab06f95e7efb05ec439a6b70136081ea522d270bc351ae5bb27"
 dependencies = [
- "generic-array",
+ "generic-array 0.12.3",
  "stable_deref_trait",
 ]
 
@@ -179,6 +179,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "generic-array"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ed1e761351b56f54eb9dcd0cfaca9fd0daecf93918e1cfc01c8a3d26ee7adcd"
+dependencies = [
+ "typenum",
+]
+
+[[package]]
 name = "nb"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -236,6 +245,7 @@ dependencies = [
  "panic-halt",
  "pin-utils",
  "stm32f4xx-hal",
+ "stm32l4xx-hal",
 ]
 
 [[package]]
@@ -287,6 +297,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c33a3c44ca05fa6f1807d8e6743f3824e8509beca625669633be0acbdf509dc"
 
 [[package]]
+name = "rand_core"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90bde5296fc891b0cef12a6d03ddccc162ce7b2aff54160af9338f8d40df6d19"
+
+[[package]]
 name = "rustc_version"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -318,9 +334,9 @@ checksum = "dba1a27d3efae4351c8051072d619e3ade2820635c3958d826bfea39d59b54c8"
 
 [[package]]
 name = "stm32f4"
-version = "0.8.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec5833f4399bfeca7c33a3797d2cfc4db14e871794cc4796de80d2a44864cc2a"
+checksum = "11460b4de3a84f072e2cf6e76306c64d27f405a0e83bace0a726f555ddf4bf33"
 dependencies = [
  "bare-metal",
  "cortex-m",
@@ -330,9 +346,9 @@ dependencies = [
 
 [[package]]
 name = "stm32f4xx-hal"
-version = "0.6.0"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8b5b1feabb6f6f4ae8ddab194f6b79965f4d9be66d5717f58468c38d3bd90c4"
+checksum = "b3a2f044469d1e3aff2cd02bee8b2724f3d5d91f3175e5d1ec99770320d16192"
 dependencies = [
  "bare-metal",
  "cast",
@@ -340,7 +356,37 @@ dependencies = [
  "cortex-m-rt",
  "embedded-hal",
  "nb",
+ "rand_core 0.5.1",
  "stm32f4",
+ "void",
+]
+
+[[package]]
+name = "stm32l4"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9abc2787195d7055b342be5a7934d74099fd7e92b81c0771002b3b35ccfc85b"
+dependencies = [
+ "bare-metal",
+ "cortex-m",
+ "cortex-m-rt",
+ "vcell",
+]
+
+[[package]]
+name = "stm32l4xx-hal"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fc8fef7443befd04ba8714ccb9475d86639794492e2b2dcbfbe675bbae8fafa"
+dependencies = [
+ "as-slice",
+ "cast",
+ "cortex-m",
+ "embedded-hal",
+ "generic-array 0.13.2",
+ "nb",
+ "stable_deref_trait",
+ "stm32l4",
  "void",
 ]
 
